@@ -1,4 +1,5 @@
 use std::net::TcpListener;
+use std::net::TcpStream;
 
 use clap::Command;
 use clap::arg;
@@ -90,6 +91,37 @@ fn main() {
         ring_split.pop();
 
         debug!("Loaded ring buffer: {:#?}", ring_split);
+
+        info!("Connecting servers in ring");
+        let mut ringbuf = RingBuffer::new(ring_split.iter().map(|x| x.to_string()).collect());
+
+        let _ = ringbuf.next(); // Skip the root server
+
+        for index in 1..ringbuf.len() {
+            let relay_ip = ringbuf.at(index);
+            let next_ip = ringbuf.next();
+
+            debug!(
+                "Relay server #{}: Server IP {}, next is {}",
+                index, relay_ip, next_ip
+            );
+
+            let mut stream =
+                TcpStream::connect(relay_ip).expect("Failed to connect to remote relay device");
+
+            let mut next_info_packet = server::packet::Packet::new();
+            next_info_packet.packet_type = server::packet::PacketType::RootServerConfigure;
+
+            next_info_packet
+                .params
+                .insert(String::from("NextIPAddr"), next_ip);
+
+            next_info_packet.send_packet(&mut stream);
+
+            stream
+                .shutdown(std::net::Shutdown::Both)
+                .expect("Failed to shutdown server");
+        }
 
         debug!("Starting remote SRBNFS server...");
 

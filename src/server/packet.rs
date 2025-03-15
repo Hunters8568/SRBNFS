@@ -14,6 +14,7 @@ pub enum ServerMode {
 pub enum PacketType {
     Handshake,
     Intentions,
+    RootServerConfigure,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
