@@ -13,7 +13,7 @@
             id="root-ip-input"
             placeholder="XX.XX.XX.XX"
         />
-        <input type="button" value="Connect" id="root-ip-submit" />
+        <input type="button" value="Connect" id="root-ip-submit" onclick={connect}  />
     </div>
     <br />
     <div id="file-upload">
@@ -21,8 +21,68 @@
 
         <input type="file" name="Upload File" multiple id="file-upload-input" />
         <br />
-        <input type="button" value="Upload" />
+        <input type="button" value="Upload" onclick={upload} />
     </div>
+
+    <script>
+        function connect() {
+            window.rootsrv = new WebSocket("ws://" + document.querySelector("#root-ip-input").value + ":8989");
+
+            window.rootsrv.addEventListener("on", event => {
+                console.log("Connected to remote");
+            });
+
+            window.rootsrv.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            window.rootsrv.addEventListener('message', async (event) => {
+  console.log('Message from server:', await event.data.text());
+});
+
+        }
+
+        function _arrayBufferToBase64( buffer ) {
+    var binary = '';
+    var bytes = new Uint8Array( buffer );
+    var len = bytes.byteLength;
+    for (var i = 0; i < len; i++) {
+        binary += String.fromCharCode( bytes[ i ] );
+    }
+    return window.btoa( binary );
+}
+
+
+        async function upload() {
+            if (window.rootsrv == undefined) {
+                alert("Not connected!");
+                return;
+            }
+
+            let fileIn = document.querySelector("#file-upload-input");
+
+            for (let i = 0; i < fileIn.files.length; i++) {
+                let file = fileIn.files[i];
+
+                let buffer = await file.arrayBuffer();
+                let content = _arrayBufferToBase64(buffer);
+
+                let packet = JSON.stringify({
+                    date_time: Math.floor(Date.now() / 1000),
+                    packet_type: "InjectFileIntoRing",
+ 
+                    params: {
+                        FileName: file.name,
+                        FileEncoded: content
+                    }
+                }) + "\n";
+
+                const encoder = new TextEncoder();
+
+                window.rootsrv.send(encoder.encode(packet));
+            }
+        }
+</script>
 </main>
 
 <style>
