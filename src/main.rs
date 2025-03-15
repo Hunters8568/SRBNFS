@@ -25,5 +25,13 @@ fn main() {
 
     for client in server.listener.incoming() {
         debug!("Client connected");
+
+        std::thread::spawn(move || {
+            let mut client = server::Client {
+                stream: client.unwrap(),
+            };
+
+            client.handle();
+        });
     }
 }
