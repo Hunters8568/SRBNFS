@@ -14,7 +14,9 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn handle(&mut self) {
+    pub fn handle_relay(&mut self) {}
+
+    pub fn handle_rootserver(&mut self) {
         debug!("Client handler start!");
 
         let mut stream = std::io::BufReader::new(&self.stream);

@@ -1,11 +1,13 @@
 use std::net::TcpListener;
 
 use clap::Command;
+use clap::arg;
 use log::*;
 use ringbuffer::RingBuffer;
 
 mod ringbuffer;
 mod server;
+mod state;
 
 const SRBNFS_SERVER_PORT: i32 = 7848;
 
@@ -18,23 +20,67 @@ fn main() {
         .subcommand(
             Command::new("rootserver")
                 .about("Boot in root server mode, loading the ring buffer from disk"),
+        )
+        .subcommand(
+            Command::new("relayserver")
+                .about("Boot in relay server mode, will wait for root server connections")
+                .arg(arg!(<PORT_NUM> "The port to bind on address 0.0.0.0").required(true)),
         );
 
     let matches = cmd.get_matches();
 
     let mut enable_root_server = false;
+    let mut enable_relay_server = false;
+    let mut relay_server_port = 0;
 
     trace!("Default: root server enabled: {}", enable_root_server);
+    trace!("Default: relay server enabled: {}", enable_relay_server);
+    trace!("Default: relay server port: {}", relay_server_port);
 
     match matches.subcommand() {
         Some(("rootserver", _)) => {
             info!("Root server mode enabled!");
             enable_root_server = true;
         }
+        Some(("relayserver", sub)) => {
+            info!("Relay server mode enabled!");
+            relay_server_port = sub
+                .get_one::<String>("PORT_NUM")
+                .expect("Port number required")
+                .parse::<u64>()
+                .expect("Port number failed to parse");
+
+            enable_relay_server = true;
+        }
         _ => unreachable!(),
     }
 
     info!("Welcome to SRBNFS - Stupid Ring Buffer Network Filesystem");
+
+    if enable_relay_server {
+        let server = server::Server {
+            listener: TcpListener::bind(format!("0.0.0.0:{}", relay_server_port))
+                .expect("Failed to find to local address"),
+        };
+
+        info!(
+            "SRBNFS server (RELAY) started on address 0.0.0.0:{}",
+            relay_server_port
+        );
+
+        for client in server.listener.incoming() {
+            debug!("Client connected to relay");
+
+            std::thread::spawn(move || {
+                let mut client = server::Client {
+                    stream: client.unwrap(),
+                    ring_buffer: RingBuffer::new(vec![]),
+                };
+
+                client.handle_relay();
+            });
+        }
+    }
 
     if enable_root_server {
         let ring_cfg_content =
@@ -71,7 +117,7 @@ fn main() {
                     ring_buffer: RingBuffer::new(new_ring.to_vec()),
                 };
 
-                client.handle();
+                client.handle_rootserver();
             });
         }
     }
