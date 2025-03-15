@@ -5,6 +5,7 @@ use clap::Command;
 use clap::arg;
 use log::*;
 use ringbuffer::RingBuffer;
+use server::packet::ServerMode;
 
 mod ringbuffer;
 mod server;
@@ -76,6 +77,8 @@ fn main() {
                 let mut client = server::Client {
                     stream: client.unwrap(),
                     ring_buffer: RingBuffer::new(vec![]),
+                    next_ip: None,
+                    op_mode: ServerMode::Unknown,
                 };
 
                 client.handle_relay();
@@ -147,6 +150,8 @@ fn main() {
                 let mut client = server::Client {
                     stream: client.unwrap(),
                     ring_buffer: RingBuffer::new(new_ring.to_vec()),
+                    next_ip: None,
+                    op_mode: ServerMode::Unknown,
                 };
 
                 client.handle_rootserver();

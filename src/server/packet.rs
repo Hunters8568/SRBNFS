@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ServerMode {
+    Unknown,
     Relay,
     Root,
 }

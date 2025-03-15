@@ -1,6 +1,7 @@
 pub mod packet;
 
 use log::*;
+use packet::ServerMode;
 use std::io::BufRead;
 
 use crate::ringbuffer::RingBuffer;
@@ -11,6 +12,8 @@ pub struct Server {
 pub struct Client {
     pub stream: std::net::TcpStream,
     pub ring_buffer: RingBuffer,
+    pub next_ip: Option<String>,
+    pub op_mode: ServerMode,
 }
 
 impl Client {
@@ -41,6 +44,31 @@ impl Client {
                 .expect("Failed to parse JSON packet from client");
 
             debug!("{:#?}", packet);
+
+            match packet.packet_type {
+                packet::PacketType::Handshake => {
+                    debug!("Client handshake complete");
+                }
+                packet::PacketType::Intentions => {
+                    let mode: ServerMode = match packet.params["Intention"].as_str() {
+                        "Relay" => ServerMode::Relay,
+                        "Root" => ServerMode::Root,
+                        _ => ServerMode::Unknown,
+                    };
+
+                    self.op_mode = mode;
+                    debug!("Connected client is operating as a: {:?}", self.op_mode);
+                }
+                packet::PacketType::RootServerConfigure => {
+                    let next_ip = packet.params["NextIPAddr"].clone();
+                    debug!(
+                        "Root server configure: Setting next address to: {}",
+                        next_ip
+                    );
+
+                    self.next_ip = Some(next_ip);
+                }
+            }
         }
     }
 
