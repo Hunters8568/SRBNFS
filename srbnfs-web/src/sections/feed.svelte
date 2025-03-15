@@ -1,5 +1,4 @@
 <script>
-    window.onload = function () {
         let fileList = new Array();
         let totalFiles = 0;
 
@@ -51,7 +50,7 @@
             }, 4000);
         }
 
-        function appendFileList(id, name, blob) {
+        window.appendFileList = function appendFileList(id, name, base64) {
             totalFiles++;
             fileList.unshift({
                 id: id,
@@ -64,9 +63,9 @@
             element.innerHTML = `
             <th>${id}</th>
             <th>${name}</th>
-            <th>${formatBytes(20010)}</th>
+            <th>${formatBytes(base64.length)}</th>
             <th>
-                <a download="download" href="url">
+                <a download="download" href="data:text/unknown;base64,${base64}">
                     <button class="download-btn"></button>
                 </a>
             </th>
@@ -80,16 +79,6 @@
             }
         }
 
-        for (let i = 0; i < 5; i++) {
-            setTimeout(
-                function () {
-                    appendFileList(125, "aaa.txt", new Blob());
-                },
-                2000 * i,
-                i,
-            );
-        }
-    };
 </script>
 
 <main>

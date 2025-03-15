@@ -37,8 +37,23 @@
             };
 
             window.rootsrv.addEventListener('message', async (event) => {
-  console.log('Message from server:', await event.data.text());
-});
+                let data = await event.data.text();
+
+                console.log('Message from server:', data);
+
+                let packet = JSON.parse(data);
+
+                if (packet["packet_type"] == "RelayFile") {
+                    let content = packet["params"]["FileEncoded"];
+                    let name = packet["params"]["FileName"];
+
+
+                    window.appendFileList(0, name, content);
+                }
+            });
+
+
+
 
         }
 
