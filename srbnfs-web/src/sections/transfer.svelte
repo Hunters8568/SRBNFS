@@ -15,9 +15,13 @@
         />
         <input type="button" value="Connect" id="root-ip-submit" />
     </div>
-
+    <br />
     <div id="file-upload">
-        <input type="file" name="Upload File" id="file-upload-input" />
+        <h2>Upload File(s)</h2>
+
+        <input type="file" name="Upload File" multiple id="file-upload-input" />
+        <br />
+        <input type="button" value="Upload" />
     </div>
 </main>
 
