@@ -16,6 +16,8 @@ pub enum PacketType {
     Handshake,
     Intentions,
     RootServerConfigure,
+    RelayFile,
+    InjectFileIntoRing,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

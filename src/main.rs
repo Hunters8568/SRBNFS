@@ -1,15 +1,18 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use clap::Command;
 use clap::arg;
 use log::*;
 use ringbuffer::RingBuffer;
+use server::packet::PacketType;
 use server::packet::ServerMode;
 
 mod ringbuffer;
 mod server;
-mod state;
 
 const SRBNFS_SERVER_PORT: i32 = 7848;
 
@@ -27,6 +30,15 @@ fn main() {
             Command::new("relayserver")
                 .about("Boot in relay server mode, will wait for root server connections")
                 .arg(arg!(<PORT_NUM> "The port to bind on address 0.0.0.0").required(true)),
+        )
+        .subcommand(
+            Command::new("injectfile")
+                .about("Inject a file into the ring at ROOTSERVER")
+                .arg(arg!(<FILE> "File to inject").required(true))
+                .arg(
+                    arg!(<ROOT_SERVER_ADDR> "Root server address to inject files at")
+                        .required(true),
+                ),
         );
 
     let matches = cmd.get_matches();
@@ -54,10 +66,42 @@ fn main() {
 
             enable_relay_server = true;
         }
+        Some(("injectfile", sub)) => {
+            let server = sub
+                .get_one::<String>("ROOT_SERVER_ADDR")
+                .expect("Failed to get root server address");
+
+            let file_path = sub
+                .get_one::<String>("FILE")
+                .expect("Failed to get file to inject");
+
+            info!("Injecting file at: {} from ./{}", server, file_path);
+
+            let file_content = std::fs::read_to_string(file_path).expect("Failed to reader");
+
+            let mut server = TcpStream::connect(server).expect("Failed to connect to root server");
+
+            let mut packet = crate::server::packet::Packet::new();
+            packet.packet_type = PacketType::InjectFileIntoRing;
+            packet
+                .params
+                .insert("FileName".to_string(), file_path.to_string());
+
+            packet.params.insert(
+                "FileEncoded".to_string(),
+                STANDARD.encode(file_content.as_bytes()),
+            );
+
+            packet.send_packet(&mut server);
+
+            std::process::exit(0);
+        }
         _ => unreachable!(),
     }
 
     info!("Welcome to SRBNFS - Stupid Ring Buffer Network Filesystem");
+
+    let next_ip: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
     if enable_relay_server {
         let server = server::Server {
@@ -72,12 +116,13 @@ fn main() {
 
         for client in server.listener.incoming() {
             debug!("Client connected to relay");
+            let value = next_ip.clone();
 
             std::thread::spawn(move || {
                 let mut client = server::Client {
                     stream: client.unwrap(),
                     ring_buffer: RingBuffer::new(vec![]),
-                    next_ip: None,
+                    next_ip: value,
                     op_mode: ServerMode::Unknown,
                 };
 
@@ -150,7 +195,7 @@ fn main() {
                 let mut client = server::Client {
                     stream: client.unwrap(),
                     ring_buffer: RingBuffer::new(new_ring.to_vec()),
-                    next_ip: None,
+                    next_ip: Arc::new(Mutex::new(String::new())),
                     op_mode: ServerMode::Unknown,
                 };
 
