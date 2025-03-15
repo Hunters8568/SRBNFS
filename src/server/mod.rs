@@ -2,7 +2,6 @@ pub mod packet;
 
 use log::*;
 use packet::{Packet, ServerMode};
-use sha2::{Digest, Sha512};
 use std::{io::BufRead, net::TcpStream, sync::Arc, sync::Mutex};
 
 use crate::ringbuffer::RingBuffer;
@@ -149,13 +148,11 @@ impl Client {
                 packet::PacketType::InjectFileIntoRing => {
                     let file_name = packet.params["FileName"].clone();
 
-                    let hashed = Sha512::digest(file_name.as_bytes());
-
                     let mut relay_packet = Packet::new();
                     relay_packet.packet_type = packet::PacketType::RelayFile;
                     relay_packet
                         .params
-                        .insert("HashedFileName".to_string(), format!("{:x}", hashed));
+                        .insert("FileName".to_string(), file_name);
 
                     relay_packet.params.insert(
                         "FileEncoded".to_string(),
