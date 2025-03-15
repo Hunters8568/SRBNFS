@@ -6,7 +6,6 @@
         <h2>Root Server Setup</h2>
 
         <p>Connection Status: Disconnected</p>
-        <p></p>
 
         <input
             type="text"
