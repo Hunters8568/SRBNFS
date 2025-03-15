@@ -7,7 +7,8 @@ use std::{io::BufRead, net::TcpStream, sync::Arc, sync::Mutex};
 use crate::ringbuffer::RingBuffer;
 
 pub struct Server {
-    pub listener: std::net::TcpListener,
+    pub listener: Arc<Mutex<std::net::TcpListener>>,
+    pub clients: Arc<Mutex<Vec<TcpStream>>>,
 }
 pub struct Client {
     pub stream: std::net::TcpStream,
@@ -89,7 +90,7 @@ impl Client {
         }
     }
 
-    pub fn handle_rootserver(&mut self) {
+    pub fn handle_rootserver<F: Fn(Packet)>(&mut self, relay: F) {
         debug!("Client handler start!");
 
         let mut stream = std::io::BufReader::new(&self.stream);
@@ -144,6 +145,8 @@ impl Client {
                         .expect("Failed to connect to remote relay device");
 
                     packet.send_packet(&mut next_server);
+
+                    relay(packet);
                 }
                 packet::PacketType::InjectFileIntoRing => {
                     let file_name = packet.params["FileName"].clone();

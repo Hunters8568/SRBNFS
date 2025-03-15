@@ -105,8 +105,11 @@ fn main() {
 
     if enable_relay_server {
         let server = server::Server {
-            listener: TcpListener::bind(format!("0.0.0.0:{}", relay_server_port))
-                .expect("Failed to find to local address"),
+            listener: Arc::new(Mutex::new(
+                TcpListener::bind(format!("0.0.0.0:{}", relay_server_port))
+                    .expect("Failed to find to local address"),
+            )),
+            clients: Arc::new(Mutex::new(vec![])),
         };
 
         info!(
@@ -114,7 +117,9 @@ fn main() {
             relay_server_port
         );
 
-        for client in server.listener.incoming() {
+        let listen = server.listener.lock().unwrap();
+
+        for client in listen.incoming() {
             debug!("Client connected to relay");
             let value = next_ip.clone();
 
@@ -173,17 +178,20 @@ fn main() {
 
         debug!("Starting remote SRBNFS server...");
 
-        let server = server::Server {
-            listener: TcpListener::bind(format!("0.0.0.0:{}", SRBNFS_SERVER_PORT))
-                .expect("Failed to find to local address"),
-        };
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", SRBNFS_SERVER_PORT))
+            .expect("Failed to find to local address");
+
+        let server: Arc<Mutex<server::Server>> = Arc::new(Mutex::new(server::Server {
+            listener: Arc::new(Mutex::new(listener.try_clone().unwrap())),
+            clients: Arc::new(Mutex::new(vec![])),
+        }));
 
         info!(
             "SRBNFS server started on address 0.0.0.0:{}",
             SRBNFS_SERVER_PORT
         );
 
-        for client in server.listener.incoming() {
+        for client in listener.incoming() {
             debug!("Client connected");
             let mut new_ring = vec![];
 
@@ -191,15 +199,55 @@ fn main() {
                 new_ring.push(ip.to_string());
             }
 
+            let weak = Arc::downgrade(&server);
+
             std::thread::spawn(move || {
+                weak.upgrade()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .clients
+                    .lock()
+                    .unwrap()
+                    .push(client.unwrap());
+
+                let size = weak
+                    .upgrade()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .clients
+                    .lock()
+                    .unwrap()
+                    .len();
+
                 let mut client = server::Client {
-                    stream: client.unwrap(),
+                    stream: weak
+                        .upgrade()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .clients
+                        .lock()
+                        .unwrap()[size - 1]
+                        .try_clone()
+                        .unwrap(),
                     ring_buffer: RingBuffer::new(new_ring.to_vec()),
                     next_ip: Arc::new(Mutex::new(String::new())),
                     op_mode: ServerMode::Unknown,
                 };
 
-                client.handle_rootserver();
+                client.handle_rootserver(move |packet| {
+                    debug!("Got relay packet to send: {:#?}", packet);
+                    let binding = weak.upgrade().unwrap();
+                    let binding = binding.lock().unwrap();
+                    let clients = binding.clients.lock().unwrap();
+
+                    for client in clients.iter() {
+                        let mut socket = client.try_clone().unwrap();
+                        packet.send_packet(&mut socket);
+                    }
+                });
             });
         }
     }
