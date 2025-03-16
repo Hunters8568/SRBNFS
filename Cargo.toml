@@ -1,0 +1,12 @@
+[package]
+name = "SRBNFS"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.22.1"
+clap = "4.5.32"
+env_logger = "0.11.7"
+log = "0.4.26"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"

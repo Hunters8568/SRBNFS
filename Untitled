@@ -1,0 +1,8 @@
+Client -> Root server (mode=control)
+            | Next server: 129.168.45.65
+            | Previous server: [root server ip]
+            V
+    Relay device (mode=relay) 7483
+            | (mode = relay)
+            V
+    
