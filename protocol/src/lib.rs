@@ -1,8 +1,9 @@
+use log::{error, trace};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Write;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PacketType {
     Handshake,
     RootConfiguration,
@@ -10,7 +11,7 @@ pub enum PacketType {
     InjectFile,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProtocolInfo {
     pub version: String,
     pub github_url: String,
@@ -25,7 +26,7 @@ impl ProtocolInfo {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Packet {
     pub packet_type: PacketType,
     pub protocol_info: Option<ProtocolInfo>,
@@ -46,8 +47,13 @@ impl Packet {
     }
 
     pub fn send(self, stream: &mut std::net::TcpStream) {
-        stream
-            .write(format!("{}\n", serde_json::to_string(&self).unwrap()).as_bytes())
-            .expect("Failed to send packet over TcpStream");
+        match stream.write(format!("{}\n", serde_json::to_string(&self).unwrap()).as_bytes()) {
+            Ok(_) => {
+                trace!("Transported packet")
+            }
+            Err(err) => {
+                error!("Failed to transport packet: {}", err);
+            }
+        }
     }
 }

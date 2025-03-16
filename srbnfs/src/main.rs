@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::net::TcpStream;
 
 use clap::{Command, arg};
@@ -33,9 +34,10 @@ fn main() {
                 TcpStream::connect(server).expect("Failed to connect to remote server");
 
             let mut packet = protocol::Packet::new(protocol::PacketType::InjectFile, true);
+
             packet.data = Some(json!({
                 "FileName": file_path,
-                "FileContent": file_content
+                "FileContent": STANDARD.encode(file_content.as_bytes())
             }));
 
             packet.send(&mut stream);

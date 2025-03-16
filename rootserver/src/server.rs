@@ -2,8 +2,10 @@ use flume::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
 use protocol::Packet;
 use serde_json::json;
+use shared::ringbuffer::RingBuffer;
 use std::io::BufRead;
-use std::net::SocketAddr;
+use std::os::fd::AsRawFd;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     io::BufReader,
     net::{TcpListener, TcpStream},
@@ -13,8 +15,9 @@ use std::{
 #[derive(Debug)]
 pub enum Event {
     ClientConnected(TcpStream),
-    ClientDisconnected(SocketAddr),
+    ClientDisconnected(TcpStream),
     InjectFile(String, String),
+    RelayPacket(Packet),
 }
 
 pub struct RootServerClient {
@@ -79,9 +82,7 @@ impl RootServer {
                 warn!("Client sent blank packet, assuming disconnection??");
 
                 sender
-                    .send(Event::ClientDisconnected(
-                        shutdown_stream.peer_addr().unwrap(),
-                    ))
+                    .send(Event::ClientDisconnected(shutdown_stream))
                     .expect("Failed to send disconnect event to dispatch");
                 break;
             };
@@ -99,7 +100,7 @@ impl RootServer {
             trace!("Parsed payload: {:#?}", packet);
 
             let data = match packet.data {
-                Some(e) => e,
+                Some(ref e) => e,
                 None => {
                     warn!("Packet has no payload, ignoring");
                     continue;
@@ -113,7 +114,11 @@ impl RootServer {
                 protocol::PacketType::RootConfiguration => {
                     error!("Root server got configuration packet! Ignoring");
                 }
-                protocol::PacketType::RelayFile => todo!(),
+                protocol::PacketType::RelayFile => {
+                    sender
+                        .send(Event::RelayPacket(packet))
+                        .expect("Failed to send relay packet");
+                }
                 protocol::PacketType::InjectFile => {
                     let file = data.get("FileName");
                     let file_content_base64 = data.get("FileContent");
@@ -137,6 +142,7 @@ impl RootServer {
 
     fn mainloop_messagequeue(
         client_list: Arc<Mutex<Vec<RootServerClient>>>,
+        ringbuffer: RingBuffer,
         sender: Arc<Sender<Event>>,
         rec: Arc<Receiver<Event>>,
     ) {
@@ -146,20 +152,53 @@ impl RootServer {
             trace!("Got message: {:#?}", msg);
 
             match msg {
-                Event::ClientDisconnected(address) => {
-                    debug!("Client disconnected with address of: {:#?}", address);
+                Event::RelayPacket(packet) => {
+                    let ip = ringbuffer.at(1); // 0 is us!
+
+                    debug!("Attempting to connect to inital relay: {}", ip);
+
+                    let mut stream = match TcpStream::connect(ip) {
+                        Ok(s) => {
+                            trace!("Connected to inital relay!");
+                            s
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to connect to inital relay, no clients will be informed of this file! {}",
+                                e
+                            );
+
+                            break;
+                        }
+                    };
+
+                    packet.send(&mut stream);
+                    stream
+                        .shutdown(std::net::Shutdown::Both)
+                        .expect("Failed to shutdown I/O");
+                }
+                Event::ClientDisconnected(socket) => {
+                    debug!("Client disconnected with address of: {:#?}", socket);
 
                     let mut index = 0;
+                    let mut found = false;
+
                     for client in client_list.lock().unwrap().iter() {
-                        if client.stream.lock().unwrap().peer_addr().unwrap() == address {
-                            trace!("Removing client: {}", index);
+                        let client_addr = client.stream.lock().unwrap().peer_addr();
+
+                        if client_addr.is_err() {
+                            found = true;
                             break;
                         }
 
                         index += 1;
                     }
 
-                    client_list.lock().unwrap().remove(index);
+                    if found {
+                        client_list.lock().unwrap().remove(index);
+                    } else {
+                        error!("Failed to disconnect client!");
+                    }
                 }
                 Event::InjectFile(file_path, file_content_hashed) => {
                     trace!(
@@ -167,6 +206,56 @@ impl RootServer {
                         file_path,
                         file_content_hashed.len()
                     );
+
+                    // Alert the first server in the chain of this file
+                    let ip = ringbuffer.at(1); // 0 is us!
+
+                    debug!("Attempting to connect to inital relay: {}", ip);
+
+                    let mut stream = match TcpStream::connect(ip) {
+                        Ok(s) => {
+                            trace!("Connected to inital relay!");
+                            s
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to connect to inital relay, no clients will be informed of this file! {}",
+                                e
+                            );
+
+                            break;
+                        }
+                    };
+
+                    let mut init_relay_pack = Packet::new(protocol::PacketType::RelayFile, false);
+                    init_relay_pack.data = Some(json!({
+                            "FileName": file_path,
+                            "FileContent": file_content_hashed,
+                            "StartTime": SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Could not determine current time")
+                    .as_secs(),
+                        }));
+
+                    init_relay_pack.send(&mut stream);
+
+                    // Tell all connected clients to the root server about this
+                    for client in client_list.lock().unwrap().iter() {
+                        let mut stream = client.stream.lock().unwrap();
+
+                        // Generate packet
+                        let mut relay_packet = Packet::new(protocol::PacketType::RelayFile, false);
+                        relay_packet.data = Some(json!({
+                                "FileName": file_path,
+                                "FileContent": file_content_hashed,
+                                "StartTime": SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Could not determine current time")
+                        .as_secs(),
+                            }));
+
+                        relay_packet.send(&mut stream);
+                    }
                 }
                 Event::ClientConnected(stream) => {
                     debug!("Adding new client to connection list!");
@@ -197,9 +286,15 @@ impl RootServer {
         let sender_cloned = self.sender.clone();
         let rec_cloned = self.rec.clone();
         let client_list_cloned = self.client_list.clone();
+        let ringbuffer_cloned = self.relay_server_ring.clone();
 
         std::thread::spawn(move || {
-            RootServer::mainloop_messagequeue(client_list_cloned, sender_cloned, rec_cloned);
+            RootServer::mainloop_messagequeue(
+                client_list_cloned,
+                ringbuffer_cloned,
+                sender_cloned,
+                rec_cloned,
+            );
         });
 
         loop {
