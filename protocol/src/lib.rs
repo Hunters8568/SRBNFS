@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io::Write;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum PacketType {
@@ -42,5 +43,11 @@ impl Packet {
             },
             data: None,
         }
+    }
+
+    pub fn send(self, stream: &mut std::net::TcpStream) {
+        stream
+            .write(format!("{}\n", serde_json::to_string(&self).unwrap()).as_bytes())
+            .expect("Failed to send packet over TcpStream");
     }
 }

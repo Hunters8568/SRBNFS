@@ -1,5 +1,7 @@
 use flume::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
+use protocol::Packet;
+use serde_json::json;
 use std::io::BufRead;
 use std::net::SocketAddr;
 use std::{
@@ -48,7 +50,14 @@ impl RootServer {
     fn spawn_client(sender: Arc<Sender<Event>>, client: RootServerClient) {
         trace!("Started client thread");
 
-        let stream = client.stream.lock().unwrap().try_clone().unwrap();
+        let mut stream = client.stream.lock().unwrap().try_clone().unwrap();
+
+        let mut handshake_packet = Packet::new(protocol::PacketType::Handshake, true);
+        handshake_packet.data = Some(json!({
+            "ProgramName": "srbnfs_root_server"
+        }));
+
+        handshake_packet.send(&mut stream);
 
         // Stream used when shutting down this client
         let shutdown_stream = stream.try_clone().unwrap();

@@ -316,6 +316,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
+name = "relayserver"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "log",
+ "pretty_env_logger",
+ "protocol",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rootserver"
 version = "0.1.0"
 dependencies = [

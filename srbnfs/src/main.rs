@@ -1,7 +1,7 @@
-use std::{io::Write, net::TcpStream, str::FromStr};
+use std::net::TcpStream;
 
 use clap::{Command, arg};
-use serde_json::{Value, json};
+use serde_json::json;
 
 fn main() {
     let cmd = Command::new("srbnfs")
@@ -38,9 +38,7 @@ fn main() {
                 "FileContent": file_content
             }));
 
-            stream
-                .write(format!("{}\n", serde_json::to_string(&packet).unwrap()).as_bytes())
-                .expect("Failed to write to stream");
+            packet.send(&mut stream);
         }
         _ => unreachable!(),
     };
