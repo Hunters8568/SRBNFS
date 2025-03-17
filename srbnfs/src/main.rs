@@ -1,5 +1,4 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use protocol::Identity;
 use std::{
     fs::File,
     io::{BufRead, BufReader, Read},
@@ -40,7 +39,6 @@ fn main() {
 
             packet.data = Some(json!({
                 "ProgramName": "srbnfs_cli",
-                "Identity": Identity::Listener
             }));
 
             packet.send(&mut stream);

@@ -1,6 +1,6 @@
 use flume::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
-use protocol::{Identity, Packet};
+use protocol::Packet;
 use serde_json::json;
 use shared::ringbuffer::RingBuffer;
 use std::io::BufRead;
@@ -21,7 +21,6 @@ pub enum Event {
 
 pub struct RootServerClient {
     stream: Arc<Mutex<TcpStream>>,
-    id: Identity,
 }
 
 pub struct RootServer {
@@ -65,7 +64,6 @@ impl RootServer {
         let mut handshake_packet = Packet::new(protocol::PacketType::Handshake, true);
         handshake_packet.data = Some(json!({
             "ProgramName": "srbnfs_root_server",
-            "Identity": Identity::RootServer
         }));
 
         handshake_packet.send(&mut stream);
@@ -124,29 +122,7 @@ impl RootServer {
             };
 
             match packet.packet_type {
-                protocol::PacketType::Handshake => {
-                    let identity = data.get("Identity");
-                    if identity.is_none() {
-                        error!("Handshake packet missing Identity");
-                        continue;
-                    }
-
-                    match identity.unwrap().as_str().unwrap() {
-                        "RootServer" => {
-                            client.lock().as_mut().unwrap().id = Identity::RootServer;
-                        }
-                        "Relay" => {
-                            client.lock().as_mut().unwrap().id = Identity::RootServer;
-                        }
-                        "Listener" => {}
-                        _ => {
-                            error!("Invalid identity");
-                            continue;
-                        }
-                    };
-
-                    trace!("Connected device has identity of: {}", identity.unwrap());
-                }
+                protocol::PacketType::Handshake => {}
                 protocol::PacketType::RootConfiguration => {
                     error!("Root server got configuration packet! Ignoring");
                 }
@@ -208,15 +184,14 @@ impl RootServer {
                         }
                     };
 
-                    // Now tell all other connected clients which identify as listener devices
+                    // Now tell all other connected clients
+
                     let packet_cloned = packet.clone();
 
                     packet.send(&mut stream);
 
                     for client_lock in client_list.lock().unwrap().iter() {
                         let client = client_lock.lock().unwrap();
-
-                        debug!("Client identity: {:#?}", client.id);
 
                         let mut stream = client.stream.lock().unwrap();
 
@@ -313,7 +288,6 @@ impl RootServer {
 
                     let client = Arc::new(Mutex::new(RootServerClient {
                         stream: Arc::new(Mutex::new(stream)),
-                        id: Identity::Unknown,
                     }));
 
                     // Clone resources for client thread

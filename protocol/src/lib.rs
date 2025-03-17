@@ -11,14 +11,6 @@ pub enum PacketType {
     InjectFile,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub enum Identity {
-    Unknown,
-    RootServer,
-    Relay,
-    Listener,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProtocolInfo {
     pub version: String,
@@ -57,10 +49,10 @@ impl Packet {
     pub fn send(self, stream: &mut std::net::TcpStream) {
         match stream.write(format!("{}\n", serde_json::to_string(&self).unwrap()).as_bytes()) {
             Ok(_) => {
-                trace!("Transported packet")
+                trace!("Transported packet: {:?}", self);
             }
             Err(err) => {
-                error!("Failed to transport packet: {}", err);
+                error!("Failed to transport packet: {:#?} {}", self, err);
             }
         }
     }
