@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     host: "127.0.0.1",
-    port: 80,
+    port: 5500,
     allowedHosts: [
       "srbnfs.dino.icu",
       "srbnfs.antilimit.dev"
