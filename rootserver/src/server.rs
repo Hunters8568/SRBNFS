@@ -167,8 +167,8 @@ impl RootServer {
                     // Inject the file into our ring
                     sender
                         .send(Event::InjectFile(
-                            file.unwrap().to_string(),
-                            file_content_base64.unwrap().to_string(),
+                            file.unwrap().as_str().unwrap().to_string(),
+                            file_content_base64.unwrap().as_str().unwrap().to_string(),
                         ))
                         .expect("Failed to send InjectFile message");
                 }
