@@ -1,7 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use protocol::Identity;
 use std::{
-    io::{BufRead, BufReader},
+    fs::File,
+    io::{BufRead, BufReader, Read},
     net::TcpStream,
 };
 
@@ -73,7 +74,12 @@ fn main() {
 
             println!("Injecting file at: {} from ./{}", server, file_path);
 
-            let file_content = std::fs::read_to_string(file_path).expect("Failed to reader");
+            let mut buffer: Vec<u8> = vec![];
+
+            let mut file = File::open(file_path).expect("Failed to open from file");
+            file.read_to_end(&mut buffer)
+                .expect("Failed to read file contents to buffer");
+
             let mut stream =
                 TcpStream::connect(server).expect("Failed to connect to remote server");
 
@@ -81,7 +87,7 @@ fn main() {
 
             packet.data = Some(json!({
                 "FileName": file_path,
-                "FileContent": STANDARD.encode(file_content.as_bytes())
+                "FileContent": STANDARD.encode(buffer)
             }));
 
             packet.send(&mut stream);
