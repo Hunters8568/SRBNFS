@@ -1,10 +1,9 @@
 use flume::{Receiver, Sender};
 use log::{debug, error, info, trace, warn};
-use protocol::Packet;
+use protocol::{Identity, Packet};
 use serde_json::json;
 use shared::ringbuffer::RingBuffer;
 use std::io::BufRead;
-use std::os::fd::AsRawFd;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     io::BufReader,
@@ -22,13 +21,14 @@ pub enum Event {
 
 pub struct RootServerClient {
     stream: Arc<Mutex<TcpStream>>,
+    id: Identity,
 }
 
 pub struct RootServer {
     listener: Arc<TcpListener>,
     sender: Arc<Sender<Event>>,
     rec: Arc<Receiver<Event>>,
-    client_list: Arc<Mutex<Vec<RootServerClient>>>,
+    client_list: Arc<Mutex<Vec<Arc<Mutex<RootServerClient>>>>>,
     relay_server_ring: shared::ringbuffer::RingBuffer,
 }
 
@@ -50,14 +50,22 @@ impl RootServer {
         })
     }
 
-    fn spawn_client(sender: Arc<Sender<Event>>, client: RootServerClient) {
+    fn spawn_client(sender: Arc<Sender<Event>>, client: Arc<Mutex<RootServerClient>>) {
         trace!("Started client thread");
 
-        let mut stream = client.stream.lock().unwrap().try_clone().unwrap();
+        let mut stream = client
+            .lock()
+            .unwrap()
+            .stream
+            .lock()
+            .unwrap()
+            .try_clone()
+            .unwrap();
 
         let mut handshake_packet = Packet::new(protocol::PacketType::Handshake, true);
         handshake_packet.data = Some(json!({
-            "ProgramName": "srbnfs_root_server"
+            "ProgramName": "srbnfs_root_server",
+            "Identity": Identity::RootServer
         }));
 
         handshake_packet.send(&mut stream);
@@ -70,9 +78,17 @@ impl RootServer {
         loop {
             let mut line = String::new();
 
-            if bufreader.read_line(&mut line).is_err() {
-                error!("Socket I/O failure, disconnecting client");
-            }
+            match bufreader.read_line(&mut line) {
+                Ok(v) => v,
+                Err(err) => {
+                    error!("Socket I/O failure, disconnecting client: {}", err);
+
+                    sender
+                        .send(Event::ClientDisconnected(shutdown_stream))
+                        .expect("Failed to send disconnect event to dispatch");
+                    break;
+                }
+            };
 
             // Cleanup packet
 
@@ -109,7 +125,27 @@ impl RootServer {
 
             match packet.packet_type {
                 protocol::PacketType::Handshake => {
-                    error!("Root server got handshake, this should not happen, ignoring");
+                    let identity = data.get("Identity");
+                    if identity.is_none() {
+                        error!("Handshake packet missing Identity");
+                        continue;
+                    }
+
+                    match identity.unwrap().as_str().unwrap() {
+                        "RootServer" => {
+                            client.lock().as_mut().unwrap().id = Identity::RootServer;
+                        }
+                        "Relay" => {
+                            client.lock().as_mut().unwrap().id = Identity::RootServer;
+                        }
+                        "Listener" => {}
+                        _ => {
+                            error!("Invalid identity");
+                            continue;
+                        }
+                    };
+
+                    trace!("Connected device has identity of: {}", identity.unwrap());
                 }
                 protocol::PacketType::RootConfiguration => {
                     error!("Root server got configuration packet! Ignoring");
@@ -141,7 +177,7 @@ impl RootServer {
     }
 
     fn mainloop_messagequeue(
-        client_list: Arc<Mutex<Vec<RootServerClient>>>,
+        client_list: Arc<Mutex<Vec<Arc<Mutex<RootServerClient>>>>>,
         ringbuffer: RingBuffer,
         sender: Arc<Sender<Event>>,
         rec: Arc<Receiver<Event>>,
@@ -172,7 +208,21 @@ impl RootServer {
                         }
                     };
 
+                    // Now tell all other connected clients which identify as listener devices
+                    let packet_cloned = packet.clone();
+
                     packet.send(&mut stream);
+
+                    for client_lock in client_list.lock().unwrap().iter() {
+                        let client = client_lock.lock().unwrap();
+
+                        debug!("Client identity: {:#?}", client.id);
+
+                        let mut stream = client.stream.lock().unwrap();
+
+                        packet_cloned.clone().send(&mut stream);
+                    }
+
                     stream
                         .shutdown(std::net::Shutdown::Both)
                         .expect("Failed to shutdown I/O");
@@ -184,7 +234,7 @@ impl RootServer {
                     let mut found = false;
 
                     for client in client_list.lock().unwrap().iter() {
-                        let client_addr = client.stream.lock().unwrap().peer_addr();
+                        let client_addr = client.lock().unwrap().stream.lock().unwrap().peer_addr();
 
                         if client_addr.is_err() {
                             found = true;
@@ -240,7 +290,8 @@ impl RootServer {
                     init_relay_pack.send(&mut stream);
 
                     // Tell all connected clients to the root server about this
-                    for client in client_list.lock().unwrap().iter() {
+                    for client_lock in client_list.lock().unwrap().iter() {
+                        let client = client_lock.lock().unwrap();
                         let mut stream = client.stream.lock().unwrap();
 
                         // Generate packet
@@ -259,22 +310,22 @@ impl RootServer {
                 }
                 Event::ClientConnected(stream) => {
                     debug!("Adding new client to connection list!");
-                    let stream_cloned = Arc::new(Mutex::new(stream.try_clone().unwrap()));
 
-                    let client = RootServerClient {
+                    let client = Arc::new(Mutex::new(RootServerClient {
                         stream: Arc::new(Mutex::new(stream)),
-                    };
-
-                    client_list.lock().unwrap().push(client);
+                        id: Identity::Unknown,
+                    }));
 
                     // Clone resources for client thread
 
-                    let new_client = RootServerClient {
-                        stream: stream_cloned,
-                    };
-
                     let sender_cloned = sender.clone();
-                    std::thread::spawn(move || RootServer::spawn_client(sender_cloned, new_client));
+                    let client_cloned = client.clone();
+
+                    client_list.lock().unwrap().push(client);
+
+                    std::thread::spawn(move || {
+                        RootServer::spawn_client(sender_cloned, client_cloned)
+                    });
                 }
             };
         }

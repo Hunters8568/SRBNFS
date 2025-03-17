@@ -2,6 +2,7 @@ use std::{
     io::{BufRead, BufReader},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use log::{debug, error, info, trace, warn};
@@ -19,11 +20,11 @@ impl RelayServer {
         })
     }
 
-    pub fn spawn_client(stream_arc: Arc<TcpStream>, next_ip: Arc<Mutex<String>>) {
+    pub fn spawn_client(stream_arc: Arc<Mutex<TcpStream>>, next_ip: Arc<Mutex<String>>) {
         trace!("Started client thread");
 
         loop {
-            let stream = stream_arc.try_clone().unwrap();
+            let stream = stream_arc.lock().unwrap().try_clone().unwrap();
             let mut bufreader: BufReader<TcpStream> = BufReader::new(stream);
 
             let mut line = String::new();
@@ -58,7 +59,9 @@ impl RelayServer {
             };
 
             match packet.packet_type {
-                protocol::PacketType::Handshake => todo!(),
+                protocol::PacketType::Handshake => {
+                    debug!("Got handshake from root server");
+                }
                 protocol::PacketType::RootConfiguration => {
                     let relay_ip_raw = data.get("NextRelayAddress");
 
@@ -95,6 +98,8 @@ impl RelayServer {
                             }
                         };
 
+                    std::thread::sleep(Duration::from_secs(2));
+
                     packet.send(&mut stream);
                 }
                 protocol::PacketType::InjectFile => {
@@ -111,7 +116,7 @@ impl RelayServer {
 
             info!("Client connected with address: {:#?}", addr);
 
-            let stream_cloned = Arc::new(stream);
+            let stream_cloned = Arc::new(Mutex::new(stream));
             let next_ip_cloned = next_ip.clone();
 
             std::thread::spawn(move || {

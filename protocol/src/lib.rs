@@ -11,6 +11,14 @@ pub enum PacketType {
     InjectFile,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub enum Identity {
+    Unknown,
+    RootServer,
+    Relay,
+    Listener,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProtocolInfo {
     pub version: String,
