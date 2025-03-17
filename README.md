@@ -3,7 +3,7 @@ Stupid Ring Buffer Filesystem.
 Aka the best storage solution ever invented.
 
 ## About
-**Developed for Scrapyard Boston on 3/15/25, tied for 3rd place.**
+**Developed for Scrapyard Boston on 3/15/25, tied for 3rd place.** (NOTE: STILL IN DEVELOPMENT, CHECK LEGACY BRANCH FOR CODE AS OF END OF HACKATHON)
 SRBNFS works by perpetually transporting files over the network. Files are only stored in memory, and during transport, never on disk.
 
 
