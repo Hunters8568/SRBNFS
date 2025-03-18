@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct RingBuffer {
     data: Vec<String>,
     current_index: usize,
